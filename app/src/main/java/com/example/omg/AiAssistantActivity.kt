@@ -4,10 +4,13 @@ import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -52,13 +55,22 @@ class AiAssistantActivity : AppCompatActivity() {
     private lateinit var btnAnalyze: Button
 
     private lateinit var tvAiResponse: TextView
+    private lateinit var layoutSuggestedService: LinearLayout
+    private lateinit var tvSuggestedService: TextView
     private lateinit var btnFindProvider: Button
     private lateinit var btnNewAnalysis: Button
     private lateinit var btnClose: ImageView
     private lateinit var btnCloseResult: ImageView
 
     private var currentPhotoBitmap: Bitmap? = null
+    private var suggestedService: String? = null
     private val GEMINI_API_KEY = "AIzaSyAg9quXZV414T1nHYqI-NxlbEhjgeauJnc"
+
+    private val servicesList = listOf(
+        "Gasfitería", "Jardinería", "Repartidor de Gas", "Servicio de Limpieza",
+        "Mozos", "Masajista", "Manicure", "Técnico", "Profesores",
+        "Electricista", "Plomería", "Carpintería", "Pintura", "Delivery", "Seguridad"
+    )
 
     private val takePictureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -72,11 +84,27 @@ class AiAssistantActivity : AppCompatActivity() {
         }
     }
 
+    private val pickImageLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val imageUri: Uri? = result.data?.data
+            imageUri?.let {
+                currentPhotoBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, it))
+                } else {
+                    MediaStore.Images.Media.getBitmap(contentResolver, it)
+                }
+                showUploadedPhoto()
+            }
+        }
+    }
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            openCamera()
+            showImageSourceDialog()
         } else {
             Toast.makeText(this, "Se necesita permiso de cámara", Toast.LENGTH_SHORT).show()
         }
@@ -114,6 +142,8 @@ class AiAssistantActivity : AppCompatActivity() {
         btnAnalyze = findViewById(R.id.btnAnalyze)
 
         tvAiResponse = findViewById(R.id.tvAiResponse)
+        layoutSuggestedService = findViewById(R.id.layoutSuggestedService)
+        tvSuggestedService = findViewById(R.id.tvSuggestedService)
         btnFindProvider = findViewById(R.id.btnFindProvider)
         btnNewAnalysis = findViewById(R.id.btnNewAnalysis)
         btnClose = findViewById(R.id.btnClose)
@@ -194,8 +224,14 @@ class AiAssistantActivity : AppCompatActivity() {
         }
 
         btnFindProvider.setOnClickListener {
-            val intent = Intent(this, SearchActivity::class.java)
-            startActivity(intent)
+            suggestedService?.let {
+                val intent = Intent(this, ProvidersListActivity::class.java).apply {
+                    putExtra("SERVICE_NAME", it)
+                    putExtra("LATITUDE", -12.0931)
+                    putExtra("LONGITUDE", -77.0465)
+                }
+                startActivity(intent)
+            }
         }
 
         btnNewAnalysis.setOnClickListener {
@@ -209,7 +245,7 @@ class AiAssistantActivity : AppCompatActivity() {
                 this,
                 Manifest.permission.CAMERA
             ) == PackageManager.PERMISSION_GRANTED -> {
-                openCamera()
+                showImageSourceDialog()
             }
             else -> {
                 requestPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -217,9 +253,27 @@ class AiAssistantActivity : AppCompatActivity() {
         }
     }
 
+    private fun showImageSourceDialog() {
+        val options = arrayOf("Tomar foto", "Elegir de la galería")
+        AlertDialog.Builder(this)
+            .setTitle("Elige una imagen")
+            .setItems(options) { dialog, which ->
+                when (which) {
+                    0 -> openCamera()
+                    1 -> openGallery()
+                }
+            }
+            .show()
+    }
+
     private fun openCamera() {
         val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         takePictureLauncher.launch(takePictureIntent)
+    }
+
+    private fun openGallery() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        pickImageLauncher.launch(intent)
     }
 
     private fun showUploadedPhoto() {
@@ -254,6 +308,7 @@ class AiAssistantActivity : AppCompatActivity() {
 
     private suspend fun callGeminiAPI(userDescription: String): String {
         return try {
+            // URL actualizada a la versión 2.5-flash como solicitaste
             val url = URL("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY")
             val connection = url.openConnection() as HttpURLConnection
 
@@ -288,15 +343,11 @@ class AiAssistantActivity : AppCompatActivity() {
             contents.put(content)
             jsonRequest.put("contents", contents)
 
-            android.util.Log.d("AiAssistant", "URL: ${url}")
-            android.util.Log.d("AiAssistant", "Request: ${jsonRequest.toString()}")
-
             val outputStream = connection.outputStream
             outputStream.write(jsonRequest.toString().toByteArray())
             outputStream.close()
 
             val responseCode = connection.responseCode
-            android.util.Log.d("AiAssistant", "Response code: $responseCode")
 
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 val inputStream = connection.inputStream
@@ -313,30 +364,22 @@ class AiAssistantActivity : AppCompatActivity() {
             } else {
                 val errorStream = connection.errorStream
                 val errorResponse = errorStream?.bufferedReader()?.use { it.readText() } ?: "Sin detalles"
-                android.util.Log.e("AiAssistant", "Error: $errorResponse")
                 "Error $responseCode: $errorResponse"
             }
         } catch (e: Exception) {
-            android.util.Log.e("AiAssistant", "Exception", e)
             "Error: ${e.message}"
         }
     }
 
     private fun buildPrompt(userDescription: String): String {
+        val serviceListString = servicesList.joinToString(", ")
         return """
-            Eres un asistente experto en diagnóstico de problemas del hogar y servicios técnicos.
+            Analiza la imagen (si hay una) y la descripción: "$userDescription".
             
-            ${if (currentPhotoBitmap != null) "Analiza la imagen proporcionada y " else ""}
-            ${if (userDescription.isNotEmpty()) "el usuario describe: \"$userDescription\"" else ""}
+            Tienes esta lista de servicios disponibles: [$serviceListString].
             
-            Por favor, proporciona:
-            1. Un diagnóstico claro del problema
-            2. Posibles causas
-            3. Nivel de urgencia (Bajo/Medio/Alto)
-            4. Qué tipo de profesional necesita (electricista, gasfitero, etc.)
-            5. Estimación de costo aproximado en soles peruanos
-            
-            Responde de forma clara, concisa y útil.
+            1. Si el problema se puede resolver con uno de los servicios de la lista, responde ÚNICAMENTE con el nombre exacto de ese servicio.
+            2. Si el problema NO coincide con ninguno de la lista, responde DIRECTAMENTE con: "El servicio que necesitas es [tu sugerencia aquí]" (ej. "El servicio que necesitas es un veterinario").
         """.trimIndent()
     }
 
@@ -350,7 +393,28 @@ class AiAssistantActivity : AppCompatActivity() {
     private fun showResult(response: String) {
         layoutAnalyzing.visibility = View.GONE
         layoutResult.visibility = View.VISIBLE
-        tvAiResponse.text = response
+
+        val cleanResponse = response.trim().replace(".", "")
+
+        // Verificamos si la respuesta es exactamente uno de nuestros servicios
+        val matchedService = servicesList.firstOrNull { it.equals(cleanResponse, ignoreCase = true) }
+
+        if (matchedService != null) {
+            // Caso: Encontró un servicio de la lista
+            tvAiResponse.text = "Basado en el análisis, hemos encontrado el servicio ideal para ti."
+            
+            suggestedService = matchedService
+            tvSuggestedService.text = matchedService
+            layoutSuggestedService.visibility = View.VISIBLE
+            btnFindProvider.visibility = View.VISIBLE
+        } else {
+            // Caso: NO encontró match en la lista (o es un error), muestra lo que dijo la IA
+            tvAiResponse.text = response
+            
+            suggestedService = null
+            layoutSuggestedService.visibility = View.GONE
+            btnFindProvider.visibility = View.GONE
+        }
     }
 
     private fun resetToUpload() {
@@ -359,5 +423,7 @@ class AiAssistantActivity : AppCompatActivity() {
         currentPhotoBitmap = null
         hideUploadedPhoto()
         etProblemDescription.text.clear()
+        suggestedService = null
+        layoutSuggestedService.visibility = View.GONE
     }
 }
