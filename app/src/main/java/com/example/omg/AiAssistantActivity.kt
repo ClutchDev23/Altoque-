@@ -58,7 +58,7 @@ class AiAssistantActivity : AppCompatActivity() {
     private lateinit var btnCloseResult: ImageView
 
     private var currentPhotoBitmap: Bitmap? = null
-    private val GEMINI_API_KEY = "AIzaSyDFKgdTpfM23dGuxzmLhiS1EPvHgsClsEg"
+    private val GEMINI_API_KEY = "AIzaSyAg9quXZV414T1nHYqI-NxlbEhjgeauJnc"
 
     private val takePictureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -254,7 +254,7 @@ class AiAssistantActivity : AppCompatActivity() {
 
     private suspend fun callGeminiAPI(userDescription: String): String {
         return try {
-            val url = URL("https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=$GEMINI_API_KEY")
+            val url = URL("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY")
             val connection = url.openConnection() as HttpURLConnection
 
             connection.requestMethod = "POST"
