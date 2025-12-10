@@ -20,10 +20,18 @@ import androidx.cardview.widget.CardView
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentContainerView
 import com.example.omg.model.EstadoResponse
 import com.example.omg.network.RetrofitClient
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -32,7 +40,7 @@ import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 
-class TrabajadorHomeActivity : AppCompatActivity() {
+class TrabajadorHomeActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var switchEstado: SwitchMaterial
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -46,11 +54,20 @@ class TrabajadorHomeActivity : AppCompatActivity() {
     private lateinit var tvDescription: TextView
     private lateinit var tvSolicitudesTitle: TextView
     private lateinit var btnAceptarTrabajo: Button
+    private lateinit var btnLlegue: Button
+    private lateinit var mapContainer: FragmentContainerView
 
+    private var googleMap: GoogleMap? = null
     private var requestListener: ListenerRegistration? = null
     private var directRequestListener: ListenerRegistration? = null
     private var myServiceType: String? = null
     private var currentRequestId: String? = null
+    
+    // Ubicaciones para el mapa
+    private var clientLat: Double = 0.0
+    private var clientLng: Double = 0.0
+    private var myLat: Double = 0.0
+    private var myLng: Double = 0.0
 
     companion object {
         private const val LOCATION_PERMISSION_REQUEST_CODE = 2000
@@ -67,6 +84,10 @@ class TrabajadorHomeActivity : AppCompatActivity() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         initViews()
+        
+        // Inicializar mapa
+        val mapFragment = supportFragmentManager.findFragmentById(R.id.mapWorker) as SupportMapFragment
+        mapFragment.getMapAsync(this)
         
         // 1. Verificar estado del trabajador antes de permitirle hacer nada
         verificarEstadoTrabajador()
@@ -146,6 +167,8 @@ class TrabajadorHomeActivity : AppCompatActivity() {
         tvDescription = findViewById(R.id.tvDescription)
         tvSolicitudesTitle = findViewById(R.id.tvSolicitudes)
         btnAceptarTrabajo = findViewById(R.id.btnAceptarTrabajo)
+        btnLlegue = findViewById(R.id.btnLlegue)
+        mapContainer = findViewById(R.id.mapWorker)
 
         cardRequest.visibility = View.GONE
         tvSolicitudesTitle.text = "ESPERANDO SOLICITUDES..."
@@ -175,6 +198,10 @@ class TrabajadorHomeActivity : AppCompatActivity() {
         btnAceptarTrabajo.setOnClickListener {
             aceptarTrabajoActual()
         }
+        
+        btnLlegue.setOnClickListener {
+            notificarLlegada()
+        }
     }
 
     private fun aceptarTrabajoActual() {
@@ -188,6 +215,21 @@ class TrabajadorHomeActivity : AppCompatActivity() {
             }
             .addOnFailureListener { e ->
                 Toast.makeText(this, "Error al aceptar: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+    
+    private fun notificarLlegada() {
+        val requestId = currentRequestId ?: return
+        // Opcional: Actualizar estado en Firestore a "arrived" si tuviéramos ese estado
+        // Por ahora solo enviamos notificación local simulada (o el backend debería notificar al usuario)
+        
+        db.collection("service_requests").document(requestId)
+            .update("status", "arrived") // Nuevo estado
+            .addOnSuccessListener {
+                Toast.makeText(this, "Notificación enviada al usuario", Toast.LENGTH_SHORT).show()
+                sendNotification("📍 Has llegado", "Esperando al cliente...")
+                btnLlegue.isEnabled = false
+                btnLlegue.text = "ESPERANDO..."
             }
     }
     
@@ -231,12 +273,12 @@ class TrabajadorHomeActivity : AppCompatActivity() {
 
         fusedLocationClient.lastLocation.addOnSuccessListener { location ->
             if (location != null) {
-                val lat = location.latitude
-                val lng = location.longitude
+                myLat = location.latitude
+                myLng = location.longitude
                 
                 updateStatusUI(true)
-                updateWorkerLocationInFirestore(true, lat, lng)
-                startListeningForRequests(lat, lng)
+                updateWorkerLocationInFirestore(true, myLat, myLng)
+                startListeningForRequests(myLat, myLng)
                 
                 Toast.makeText(this, "🔴 Modo Trabajador Activado", Toast.LENGTH_SHORT).show()
             }
@@ -250,6 +292,7 @@ class TrabajadorHomeActivity : AppCompatActivity() {
         
         cardRequest.visibility = View.GONE
         tvSolicitudesTitle.text = "SOLICITUDES"
+        mapContainer.visibility = View.GONE
         Toast.makeText(this, "⚫ Modo Offline", Toast.LENGTH_SHORT).show()
     }
 
@@ -326,7 +369,6 @@ class TrabajadorHomeActivity : AppCompatActivity() {
             }
 
         // 2. Escuchar solicitudes DIRECTAS ("requested" o "accepted")
-        // No usamos whereIn para evitar problemas de índices compuestos. Filtramos localmente.
         directRequestListener = db.collection("service_requests")
             .whereEqualTo("providerId", userId)
             .addSnapshotListener { snapshots, e ->
@@ -336,13 +378,17 @@ class TrabajadorHomeActivity : AppCompatActivity() {
                     // Buscar si hay alguna activa
                     val doc = snapshots.documents.firstOrNull { 
                         val status = it.getString("status")
-                        status == "requested" || status == "accepted"
+                        status == "requested" || status == "accepted" || status == "arrived"
                     }
                     
                     if (doc != null) {
                         currentRequestId = doc.id
                         val userName = doc.getString("clientName") ?: "Cliente"
                         val status = doc.getString("status") ?: "requested"
+                        
+                        // Guardar ubicación del cliente para el mapa
+                        clientLat = doc.getDouble("clientLat") ?: 0.0
+                        clientLng = doc.getDouble("clientLng") ?: 0.0
                         
                         runOnUiThread {
                             showRequestCard(userName, 0f, status)
@@ -356,6 +402,7 @@ class TrabajadorHomeActivity : AppCompatActivity() {
                             currentRequestId = null
                             runOnUiThread {
                                 cardRequest.visibility = View.GONE
+                                mapContainer.visibility = View.GONE
                                 tvSolicitudesTitle.text = "ESPERANDO SOLICITUDES..."
                             }
                         }
@@ -382,8 +429,9 @@ class TrabajadorHomeActivity : AppCompatActivity() {
                 tvSolicitudesTitle.setTextColor(ContextCompat.getColor(this, android.R.color.white))
                 tvDescription.text = "El cliente quiere contratarte. ¿Aceptas?"
                 
-                // Mostrar botón aceptar
                 btnAceptarTrabajo.visibility = View.VISIBLE
+                btnLlegue.visibility = View.GONE
+                mapContainer.visibility = View.GONE
                 
                 try {
                     cardRequest.setCardBackgroundColor(ContextCompat.getColor(this, R.color.purple_500))
@@ -391,14 +439,26 @@ class TrabajadorHomeActivity : AppCompatActivity() {
                     cardRequest.setCardBackgroundColor(0xFF6200EE.toInt())
                 }
                 
-            } else if (type == "accepted") {
-                // ESTADO: ACEPTADO / TRABAJO EN CURSO
-                tvSolicitudesTitle.text = "¡TE HAN CONTRATADO!"
+            } else if (type == "accepted" || type == "arrived") {
+                // ESTADO: ACEPTADO / EN RUTA / LLEGÓ
+                tvSolicitudesTitle.text = if (type == "arrived") "¡LLEGASTE!" else "¡TE HAN CONTRATADO!"
                 tvSolicitudesTitle.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-                tvDescription.text = "Has aceptado el trabajo. ¡Ponte en contacto!"
+                tvDescription.text = "Dirígete a la ubicación del cliente."
                 
-                // Ocultar botón aceptar
                 btnAceptarTrabajo.visibility = View.GONE
+                btnLlegue.visibility = View.VISIBLE
+                
+                if (type == "arrived") {
+                    btnLlegue.isEnabled = false
+                    btnLlegue.text = "ESPERANDO..."
+                } else {
+                    btnLlegue.isEnabled = true
+                    btnLlegue.text = "📍 YA LLEGUÉ AL DOMICILIO"
+                }
+                
+                // MOSTRAR MAPA
+                mapContainer.visibility = View.VISIBLE
+                updateMapWithRoute()
                 
                 try {
                     cardRequest.setCardBackgroundColor(ContextCompat.getColor(this, R.color.teal_700))
@@ -414,6 +474,8 @@ class TrabajadorHomeActivity : AppCompatActivity() {
                 tvDescription.text = "Busca servicio de $myServiceType a $distanceKm km de ti."
                 
                 btnAceptarTrabajo.visibility = View.GONE
+                btnLlegue.visibility = View.GONE
+                mapContainer.visibility = View.GONE
                 
                 try {
                     cardRequest.setCardBackgroundColor(ContextCompat.getColor(this, R.color.teal_200))
@@ -423,6 +485,42 @@ class TrabajadorHomeActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e("TrabajadorHome", "Error actualizando UI", e)
+        }
+    }
+    
+    // --- Mapa ---
+    override fun onMapReady(map: GoogleMap) {
+        googleMap = map
+        map.uiSettings.isZoomControlsEnabled = true
+    }
+    
+    private fun updateMapWithRoute() {
+        if (googleMap == null || clientLat == 0.0 || myLat == 0.0) return
+        
+        googleMap?.clear()
+        
+        val myPos = LatLng(myLat, myLng)
+        val clientPos = LatLng(clientLat, clientLng)
+        
+        // Marcador trabajador (Azul/Default)
+        googleMap?.addMarker(MarkerOptions().position(myPos).title("Yo"))
+        
+        // Marcador cliente (Verde)
+        googleMap?.addMarker(MarkerOptions()
+            .position(clientPos)
+            .title("Cliente")
+            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)))
+            
+        // Centrar cámara
+        val bounds = com.google.android.gms.maps.model.LatLngBounds.Builder()
+            .include(myPos)
+            .include(clientPos)
+            .build()
+            
+        try {
+            googleMap?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100))
+        } catch (e: Exception) {
+            googleMap?.moveCamera(CameraUpdateFactory.newLatLngZoom(myPos, 14f))
         }
     }
 

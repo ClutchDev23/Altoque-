@@ -5,12 +5,21 @@
     android:layout_height="match_parent"
     android:background="#333333">
 
+    <!-- MAPA (Fondo, visible solo al aceptar) -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/mapWorker"
+        android:name="com.google.android.gms.maps.SupportMapFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Header -->
     <RelativeLayout
         android:id="@+id/headerLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:background="#99000000"> <!-- Fondo semitransparente para ver mapa -->
 
         <TextView
             android:layout_width="wrap_content"
@@ -45,26 +54,22 @@
 
     </RelativeLayout>
 
-    <!-- Línea separadora -->
-    <View
-        android:id="@+id/divider"
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_below="@id/headerLayout"
-        android:background="#555555" />
-
     <!-- Título SOLICITUDES -->
     <TextView
         android:id="@+id/tvSolicitudes"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@id/divider"
+        android:layout_below="@id/headerLayout"
         android:layout_centerHorizontal="true"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="16dp"
         android:text="SOLICITUDES"
         android:textColor="#FFFFFF"
         android:textSize="24sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        android:shadowColor="#000000"
+        android:shadowDx="2"
+        android:shadowDy="2"
+        android:shadowRadius="4"/>
 
     <!-- Tarjeta de Solicitud -->
     <androidx.cardview.widget.CardView
@@ -72,12 +77,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_below="@id/tvSolicitudes"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="16dp"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         app:cardCornerRadius="24dp"
         app:cardBackgroundColor="#4DD0E1"
-        app:cardElevation="4dp">
+        app:cardElevation="8dp">
 
         <RelativeLayout
             android:layout_width="match_parent"
@@ -100,7 +105,7 @@
                 android:layout_height="wrap_content"
                 android:layout_toEndOf="@id/ivAvatar"
                 android:layout_marginStart="12dp"
-                android:text="CHARISARD"
+                android:text="CLIENTE"
                 android:textStyle="bold"
                 android:textColor="#000000"
                 android:textSize="14sp"/>
@@ -123,12 +128,12 @@
                 android:layout_toEndOf="@id/ivAvatar"
                 android:layout_marginStart="12dp"
                 android:layout_marginTop="4dp"
-                android:text="Requiere tu servicio"
+                android:text="Detalle del servicio"
                 android:textStyle="bold"
                 android:textColor="#000000"
                 android:textSize="14sp"/>
 
-            <!-- Botón ACEPTAR (Oculto por defecto) -->
+            <!-- Botón ACEPTAR -->
             <Button
                 android:id="@+id/btnAceptarTrabajo"
                 android:layout_width="match_parent"
@@ -137,6 +142,19 @@
                 android:layout_marginTop="16dp"
                 android:text="ACEPTAR TRABAJO"
                 android:backgroundTint="#2E7D32"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!-- Botón LLEGUÉ (Nuevo) -->
+            <Button
+                android:id="@+id/btnLlegue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@id/tvDescription"
+                android:layout_marginTop="16dp"
+                android:text="📍 YA LLEGUÉ AL DOMICILIO"
+                android:backgroundTint="#FF6200EE"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:visibility="gone" />
