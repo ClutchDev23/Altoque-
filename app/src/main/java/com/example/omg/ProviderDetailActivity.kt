@@ -1,19 +1,32 @@
 package com.example.omg
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
-import android.widget.Button
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
 import com.bumptech.glide.Glide
-import android.widget.ImageView
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
-class ProviderDetailActivity : AppCompatActivity() {
+class ProviderDetailActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var btnBack: ImageButton
     private lateinit var ivProviderPhoto: ImageView
@@ -30,17 +43,32 @@ class ProviderDetailActivity : AppCompatActivity() {
     private lateinit var btnCall: View
     private lateinit var btnMessage: View
     private lateinit var btnBackToList: View
+    private lateinit var btnRequestService: View
 
+    private var googleMap: GoogleMap? = null
     private var providerLat: Double = 0.0
     private var providerLng: Double = 0.0
     private var userLat: Double = 0.0
     private var userLng: Double = 0.0
     private var providerPhone: String = ""
+    private var providerName: String = ""
+    private var providerId: String = ""
+    private var providerService: String = ""
     private var isDetailsVisible = false
+
+    private lateinit var db: FirebaseFirestore
+    private lateinit var auth: FirebaseAuth
+
+    companion object {
+        private const val CHANNEL_ID = "service_notifications"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_provider_detail)
+
+        db = FirebaseFirestore.getInstance()
+        auth = FirebaseAuth.getInstance()
 
         // Obtener datos del intent
         getIntentData()
@@ -48,19 +76,29 @@ class ProviderDetailActivity : AppCompatActivity() {
         // Inicializar vistas
         initViews()
 
+        // Configurar mapa
+        val mapFragment = supportFragmentManager
+            .findFragmentById(R.id.mapDetailFragment) as SupportMapFragment
+        mapFragment.getMapAsync(this)
+
         // Configurar listeners
         setupListeners()
 
         // Llenar datos
         fillProviderData()
+        
+        createNotificationChannel()
     }
 
     private fun getIntentData() {
+        providerId = intent.getStringExtra("PROVIDER_ID") ?: ""
         providerLat = intent.getDoubleExtra("PROVIDER_LAT", 0.0)
         providerLng = intent.getDoubleExtra("PROVIDER_LNG", 0.0)
         userLat = intent.getDoubleExtra("USER_LAT", 0.0)
         userLng = intent.getDoubleExtra("USER_LNG", 0.0)
         providerPhone = intent.getStringExtra("PROVIDER_PHONE") ?: ""
+        providerName = intent.getStringExtra("PROVIDER_NAME") ?: "Proveedor"
+        providerService = intent.getStringExtra("PROVIDER_SERVICE") ?: "General"
     }
 
     private fun initViews() {
@@ -79,24 +117,17 @@ class ProviderDetailActivity : AppCompatActivity() {
         btnCall = findViewById(R.id.btnCall)
         btnMessage = findViewById(R.id.btnMessage)
         btnBackToList = findViewById(R.id.btnBackToList)
+        btnRequestService = findViewById(R.id.btnRequestService)
     }
 
     private fun setupListeners() {
-        btnBack.setOnClickListener {
-            finish()
-        }
+        btnBack.setOnClickListener { finish() }
+        btnBackToList.setOnClickListener { finish() }
 
-        btnViewDetails.setOnClickListener {
-            toggleDetails()
-        }
+        btnViewDetails.setOnClickListener { toggleDetails() }
 
         btnViewPortfolio.setOnClickListener {
-            Toast.makeText(
-                this,
-                "Portafolio: Esta función se implementará próximamente",
-                Toast.LENGTH_SHORT
-            ).show()
-            // TODO: Abrir activity de portafolio con galería de imágenes
+            Toast.makeText(this, "Próximamente: Galería de trabajos", Toast.LENGTH_SHORT).show()
         }
 
         btnCall.setOnClickListener {
@@ -111,39 +142,62 @@ class ProviderDetailActivity : AppCompatActivity() {
         }
 
         btnMessage.setOnClickListener {
-            Toast.makeText(
-                this,
-                "Chat: Esta función se implementará próximamente",
-                Toast.LENGTH_SHORT
-            ).show()
-            // TODO: Abrir activity de chat
+            Toast.makeText(this, "Próximamente: Chat en tiempo real", Toast.LENGTH_SHORT).show()
+        }
+        
+        btnRequestService.setOnClickListener {
+            requestService()
+        }
+    }
+    
+    private fun requestService() {
+        val user = auth.currentUser
+        if (user == null) {
+            Toast.makeText(this, "Error: Usuario no identificado", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        btnBackToList.setOnClickListener {
-            finish()
-        }
+        // Crear objeto de solicitud en Firestore
+        val requestId = db.collection("service_requests").document().id
+        val requestData = hashMapOf(
+            "id" to requestId,
+            "clientId" to user.uid,
+            "clientName" to (user.displayName ?: "Usuario"),
+            "providerId" to providerId, // ID del trabajador
+            "service" to providerService,
+            "status" to "requested", // Nuevo estado "solicitado"
+            "clientLat" to userLat,
+            "clientLng" to userLng,
+            "timestamp" to System.currentTimeMillis()
+        )
+
+        db.collection("service_requests").document(requestId)
+            .set(requestData)
+            .addOnSuccessListener {
+                Toast.makeText(this, "¡Servicio solicitado!", Toast.LENGTH_SHORT).show()
+                sendServiceOnTheWayNotification()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(this, "Error al solicitar: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
     }
 
     private fun toggleDetails() {
         isDetailsVisible = !isDetailsVisible
-
-        if (isDetailsVisible) {
-            detailsContainer.visibility = View.VISIBLE
-        } else {
-            detailsContainer.visibility = View.GONE
-        }
+        detailsContainer.visibility = if (isDetailsVisible) View.VISIBLE else View.GONE
     }
 
     private fun fillProviderData() {
-        tvProviderName.text = intent.getStringExtra("PROVIDER_NAME") ?: "Proveedor"
+        tvProviderName.text = providerName
         tvRating.text = intent.getFloatExtra("PROVIDER_RATING", 0f).toString()
         tvReviews.text = "(${intent.getIntExtra("PROVIDER_REVIEWS", 0)})"
-        tvArrivalTime.text = "5 minutos" // TODO: Calcular tiempo real
+        tvArrivalTime.text = "5 minutos"
         tvExperience.text = intent.getStringExtra("PROVIDER_EXPERIENCE") ?: "N/A"
         tvAveragePrice.text = intent.getStringExtra("PROVIDER_PRICE") ?: "Consultar"
 
-        // Servicios (simulado)
-        tvServices.text = "• Reparación de grifos\n• Instalación de tuberías\n• Destapado de desagüe\n• Mantenimiento preventivo"
+        // Servicios (simulado o del intent)
+        val description = intent.getStringExtra("PROVIDER_DESCRIPTION") ?: "Servicios generales"
+        tvServices.text = description
 
         // Cargar foto
         val photoUrl = intent.getStringExtra("PROVIDER_PHOTO")
@@ -153,5 +207,54 @@ class ProviderDetailActivity : AppCompatActivity() {
                 .placeholder(R.drawable.ic_user)
                 .into(ivProviderPhoto)
         }
+    }
+
+    override fun onMapReady(map: GoogleMap) {
+        googleMap = map
+        map.uiSettings.isZoomControlsEnabled = false
+        map.uiSettings.isCompassEnabled = false
+        
+        val userLoc = LatLng(userLat, userLng)
+        val providerLoc = LatLng(providerLat, providerLng)
+
+        // Marcador Usuario
+        map.addMarker(MarkerOptions()
+            .position(userLoc)
+            .title("Tu ubicación")
+            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)))
+
+        // Marcador Proveedor
+        map.addMarker(MarkerOptions()
+            .position(providerLoc)
+            .title(providerName))
+
+        // Mover cámara
+        map.moveCamera(CameraUpdateFactory.newLatLngZoom(providerLoc, 15f))
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Servicios Activos"
+            val descriptionText = "Notificaciones de estado del servicio"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+            }
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun sendServiceOnTheWayNotification() {
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notifications)
+            .setContentTitle("Servicio en Camino 🚀")
+            .setContentText("$providerName está yendo a tu ubicación.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(3001, builder.build())
     }
 }

@@ -104,12 +104,16 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun checkUserStatusAndNavigate() {
-        var correo = auth.currentUser?.email
+        // Priorizar el correo registrado en el formulario (SharedPreferences)
+        val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        var correo = prefs.getString("correo_postulante", null)
 
+        // Si no hay en prefs, usar el de Auth
         if (correo.isNullOrEmpty()) {
-            val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-            correo = prefs.getString("correo_postulante", null)
+            correo = auth.currentUser?.email
         }
+
+        Log.d("HomeActivity", "Verificando estado para el correo: $correo")
 
         if (correo.isNullOrEmpty()) {
             // Si no hay correo, no es trabajador. Va a la promo.
@@ -120,8 +124,12 @@ class HomeActivity : AppCompatActivity() {
         val apiService = RetrofitClient.instance
         apiService.verificarEstado(correo).enqueue(object : Callback<EstadoResponse> {
             override fun onResponse(call: Call<EstadoResponse>, response: Response<EstadoResponse>) {
+                Log.d("HomeActivity", "Respuesta del servidor: Code=${response.code()}, Body=${response.body()}")
+                
                 if (response.isSuccessful) {
                     val estado = response.body()?.estado
+                    Log.d("HomeActivity", "Estado recibido: $estado")
+                    
                     if (estado == "admitido") {
                         // Si es admitido, va directo al Home del Trabajador
                         startActivity(Intent(this@HomeActivity, TrabajadorHomeActivity::class.java))
@@ -130,12 +138,14 @@ class HomeActivity : AppCompatActivity() {
                         startActivity(Intent(this@HomeActivity, PromoTrabajadorActivity::class.java))
                     }
                 } else {
+                    Log.e("HomeActivity", "Error en respuesta: ${response.errorBody()?.string()}")
                     // En caso de error, fallback a la pantalla de promo
                     startActivity(Intent(this@HomeActivity, PromoTrabajadorActivity::class.java))
                 }
             }
 
             override fun onFailure(call: Call<EstadoResponse>, t: Throwable) {
+                Log.e("HomeActivity", "Fallo en conexión: ${t.message}")
                 Toast.makeText(this@HomeActivity, "Error de conexión: ${t.message}", Toast.LENGTH_LONG).show()
                 // En caso de fallo, fallback a la pantalla de promo
                 startActivity(Intent(this@HomeActivity, PromoTrabajadorActivity::class.java))

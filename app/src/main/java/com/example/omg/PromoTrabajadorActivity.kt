@@ -3,6 +3,7 @@ package com.example.omg
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -35,56 +36,66 @@ class PromoTrabajadorActivity : AppCompatActivity() {
     }
 
     private fun checkUserStatus() {
-        // 1. Intentamos obtener el email de Firebase
-        var correo = auth.currentUser?.email
+        // 1. Obtener email (prioridad: SharedPreferences > Firebase)
+        val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        var correo = prefs.getString("correo_postulante", null)
 
-        // 2. Si es nulo (login telefónico), buscamos en SharedPreferences
         if (correo.isNullOrEmpty()) {
-            val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-            correo = prefs.getString("correo_postulante", null)
+            correo = auth.currentUser?.email
         }
         
-        // 3. Si sigue siendo nulo, no podemos verificar
+        Log.d("PromoTrabajador", "Verificando estado para el correo: '$correo'")
+
         if (correo.isNullOrEmpty()) {
-            // Asumimos que no se ha registrado nunca -> Formulario
+            Toast.makeText(this, "No se encontró un correo asociado", Toast.LENGTH_SHORT).show()
             navegarSegunEstado("no_registrado")
             return
         }
 
-        // ✅ CAMBIO: Usamos RetrofitClient
         val apiService = RetrofitClient.instance
 
         // Llamada al backend
         apiService.verificarEstado(correo).enqueue(object : Callback<EstadoResponse> {
             override fun onResponse(call: Call<EstadoResponse>, response: Response<EstadoResponse>) {
+                Log.d("PromoTrabajador", "Respuesta Code: ${response.code()}")
+                
                 if (response.isSuccessful) {
                     val estado = response.body()?.estado ?: "no_registrado"
+                    val nombre = response.body()?.nombre
+                    Log.d("PromoTrabajador", "Estado recibido: '$estado' para usuario: $nombre")
+                    
                     navegarSegunEstado(estado)
                 } else {
+                    Log.e("PromoTrabajador", "Error en respuesta: ${response.errorBody()?.string()}")
                     navegarSegunEstado("no_registrado")
                 }
             }
 
             override fun onFailure(call: Call<EstadoResponse>, t: Throwable) {
+                Log.e("PromoTrabajador", "Fallo en conexión: ${t.message}")
                 Toast.makeText(this@PromoTrabajadorActivity, "Error de conexión: ${t.message}", Toast.LENGTH_LONG).show()
             }
         })
     }
 
     private fun navegarSegunEstado(estado: String) {
-        val intent = when (estado) {
+        // Normalizar el estado por si acaso llega con mayúsculas
+        val estadoNormalizado = estado.lowercase()
+
+        val intent = when (estadoNormalizado) {
             "admitido" -> Intent(this, TrabajadorHomeActivity::class.java)
             "pendiente" -> Intent(this, FaceValidationActivity::class.java)
             "denegado" -> {
                 Toast.makeText(this, "Tu solicitud fue denegada. Contacta soporte.", Toast.LENGTH_LONG).show()
                 null
             }
-            else -> Intent(this, FormularioRegistroActivity::class.java) // "no_registrado"
+            // "no_registrado" u otros
+            else -> Intent(this, FormularioRegistroActivity::class.java) 
         }
 
         intent?.let {
             startActivity(it)
-            if (estado == "admitido") finish() // Si ya es trabajador, cerramos la promo
+            if (estadoNormalizado == "admitido") finish() // Cerrar promo si ya es trabajador
         }
     }
 }

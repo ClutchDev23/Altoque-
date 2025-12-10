@@ -5,19 +5,12 @@
     android:layout_height="match_parent"
     android:background="#F5F5F5">
 
-    <!-- Mapa Placeholder -->
-    <FrameLayout
-        android:id="@+id/mapPlaceholder"
+    <!-- Mapa Real -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/mapDetailFragment"
+        android:name="com.google.android.gms.maps.SupportMapFragment"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#E0E0E0">
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="Mapa no disponible"
-            android:textColor="#757575"/>
-    </FrameLayout>
+        android:layout_height="match_parent" />
 
     <!-- Botón volver -->
     <ImageButton
@@ -242,6 +235,44 @@
                 </androidx.cardview.widget.CardView>
 
             </LinearLayout>
+
+            <!-- Botón SOLICITAR SERVICIO (NUEVO) -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/btnRequestService"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="16dp"
+                app:cardCornerRadius="28dp"
+                app:cardBackgroundColor="#00E676"
+                app:cardElevation="6dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✅"
+                        android:textSize="20sp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SOLICITAR SERVICIO"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:layout_marginStart="8dp"/>
+
+                </LinearLayout>
+
+            </androidx.cardview.widget.CardView>
 
             <!-- Botones de acción -->
             <LinearLayout

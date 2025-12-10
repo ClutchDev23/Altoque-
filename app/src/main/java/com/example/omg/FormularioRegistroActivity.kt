@@ -1,6 +1,5 @@
 package com.example.omg
 
-import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
@@ -8,13 +7,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
 import android.util.Base64
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.omg.model.Postulante
 import com.example.omg.network.RetrofitClient
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import okhttp3.ResponseBody
 import retrofit2.Call
 import retrofit2.Callback
@@ -37,6 +38,9 @@ class FormularioRegistroActivity : AppCompatActivity() {
     private lateinit var btnUploadCul: Button
     private lateinit var tvCulStatus: TextView
     private lateinit var btnSiguiente: Button
+
+    private lateinit var auth: FirebaseAuth
+    private lateinit var db: FirebaseFirestore
 
     // Variables para almacenar los Base64
     private var licenciaBase64: String? = null
@@ -62,6 +66,9 @@ class FormularioRegistroActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_formulario_registro)
+
+        auth = FirebaseAuth.getInstance()
+        db = FirebaseFirestore.getInstance()
 
         initViews()
 
@@ -113,7 +120,6 @@ class FormularioRegistroActivity : AppCompatActivity() {
     }
 
     private fun setupSubmitButton() {
-        // ✅ CAMBIO: Usamos RetrofitClient
         val apiService = RetrofitClient.instance
 
         btnSiguiente.setOnClickListener {
@@ -148,9 +154,20 @@ class FormularioRegistroActivity : AppCompatActivity() {
             apiService.enviarDatos(postulante).enqueue(object : Callback<ResponseBody> {
                 override fun onResponse(call: Call<ResponseBody>, response: Response<ResponseBody>) {
                     if (response.isSuccessful) {
-                        // ✅ GUARDAR CORREO LOCALMENTE
+                        // 1. Guardar localmente
                         val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-                        prefs.edit().putString("correo_postulante", correo).apply()
+                        prefs.edit()
+                            .putString("correo_postulante", correo)
+                            .putString("tipo_servicio_trabajador", servicio) 
+                            .apply()
+
+                        // 2. Guardar en Firestore (Respaldo para recuperar si cambia de dispositivo)
+                        val uid = auth.currentUser?.uid
+                        if (uid != null) {
+                            val data = hashMapOf("workerService" to servicio)
+                            db.collection("users").document(uid)
+                                .set(data, SetOptions.merge())
+                        }
 
                         Toast.makeText(this@FormularioRegistroActivity, "Datos enviados correctamente", Toast.LENGTH_SHORT).show()
                         val intent = Intent(this@FormularioRegistroActivity, FaceValidationActivity::class.java)
